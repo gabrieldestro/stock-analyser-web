@@ -19,6 +19,7 @@ import { GitHubReportRepository }  from '../infrastructure/GitHubReportRepositor
 import { MockReportRepository }    from '../infrastructure/MockReportRepository.js';
 import { OpenRouterService }        from '../infrastructure/OpenRouterService.js';
 import { B3QuoteRepository }        from '../infrastructure/B3QuoteRepository.js';
+import { YahooPriceRepository }     from '../infrastructure/YahooPriceRepository.js';
 
 // ── Application ──────────────────────────────────────────────────────────────
 import { ListReportsUseCase }       from '../application/ListReportsUseCase.js';
@@ -26,6 +27,7 @@ import { GetReportDetailsUseCase }  from '../application/GetReportDetailsUseCase
 import { AskAIUseCase }             from '../application/AskAIUseCase.js';
 import { ManageSettingsUseCase }    from '../application/ManageSettingsUseCase.js';
 import { GetQuoteUseCase }           from '../application/GetQuoteUseCase.js';
+import { GetPriceHistoryUseCase }    from '../application/GetPriceHistoryUseCase.js';
 
 // ── Presentation ─────────────────────────────────────────────────────────────
 import { Sidebar }         from './components/Sidebar.js';
@@ -58,8 +60,14 @@ markdownViewer.onTabChange((tabId) => {
   }
 });
 
-// ── Quote (B3 public API — no token required) ─────────────────────────────────
+// ── Quote (TradingView B3 scanner — no token required) ───────────────────────
 const getQuoteUC = new GetQuoteUseCase(new B3QuoteRepository());
+
+// ── Price history (Yahoo Finance via CORS proxy) ─────────────────────────────
+const getPriceHistoryUC = new GetPriceHistoryUseCase(new YahooPriceRepository());
+
+// Guards async price loads so a stale request cannot overwrite a newer asset.
+let reportRequestId = 0;
 
 // Chat / AI (lazy-initialised after settings are known)
 let askAIUseCase = null;
@@ -147,6 +155,8 @@ async function loadReportsList(reportRepository) {
 }
 
 async function loadReport(reportSummary, reportRepository) {
+  const requestId = ++reportRequestId;
+
   markdownViewer.showLoading();
   dataChart.clear();
   quotePanel.clear();
@@ -155,6 +165,8 @@ async function loadReport(reportSummary, reportRepository) {
   try {
     const detailsUC = new GetReportDetailsUseCase(reportRepository);
     const report    = await detailsUC.execute(reportSummary.id);
+    if (requestId !== reportRequestId) return;
+
     state.currentReport = report;
 
     // Header
@@ -169,12 +181,16 @@ async function loadReport(reportSummary, reportRepository) {
     // Data tab chart + tables
     dataChart.render(report.csv);
 
-    // Quote is independent from the report content — load it in parallel.
+    // Quote and monthly prices are independent from the report content.
     const ticker = await resolveQuoteTicker(report);
+    if (requestId !== reportRequestId) return;
+
     if (ticker) {
       quotePanel.load(ticker, (symbol, options) => getQuoteUC.execute(symbol, options));
+      loadPriceHistory(ticker, requestId);
     } else {
       quotePanel.clear();
+      dataChart.setPriceHistory(null);
     }
 
     // Enable AI button if AI is configured
@@ -183,6 +199,23 @@ async function loadReport(reportSummary, reportRepository) {
   } catch (err) {
     console.error('[app] Erro ao carregar ativo:', err);
     markdownViewer.showError(err.message || 'Não foi possível carregar o ativo.');
+  }
+}
+
+/**
+ * Loads monthly closes and hands them to the chart. Failures are non-fatal:
+ * the chart keeps showing the indicators without the price series.
+ * @param {string} ticker
+ * @param {number} requestId
+ */
+async function loadPriceHistory(ticker, requestId) {
+  try {
+    const priceByMonth = await getPriceHistoryUC.execute(ticker);
+    if (requestId !== reportRequestId) return;
+    dataChart.setPriceHistory(priceByMonth);
+  } catch (err) {
+    console.warn('[app] Histórico de preços indisponível:', err);
+    if (requestId === reportRequestId) dataChart.setPriceHistory(null);
   }
 }
 
@@ -284,6 +317,7 @@ function wireSidebarOverlay() {
       // On desktop: ensure overlay is hidden regardless
       document.getElementById('sidebar-overlay').classList.remove('visible');
     }
+    window.requestAnimationFrame(() => dataChart.resize());
   });
 }
 

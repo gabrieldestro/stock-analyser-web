@@ -452,6 +452,8 @@ html, body {
 
 /* ---- Chart Container ---- */
 .chart-container {
+  width: 100%;
+  box-sizing: border-box;
   padding: 20px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -1101,6 +1103,12 @@ label {
   color: var(--accent);
 }
 
+.metric-chip-price.active {
+  background: rgba(210, 153, 34, 0.15);
+  border-color: #d29922;
+  color: #d29922;
+}
+
 .chart-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1134,7 +1142,13 @@ label {
 
 .main-chart {
   width: 100%;
-  height: 420px;
+  height: 480px;
+}
+
+.chart-note {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .chart-tables {
