@@ -3,12 +3,26 @@ import { Quote } from '../domain/entities/Quote.js';
 
 /**
  * B3QuoteRepository
- * Fetches the current quotation from B3's public market-data API.
- * Endpoint is free, requires no token and sends permissive CORS headers.
+ * Fetches B3 quotations through TradingView's public scanner endpoint.
+ *
+ * The official B3 endpoint (cotacao.b3.com.br) does not send CORS headers, so
+ * it cannot be called from a browser. TradingView's scanner allows CORS and
+ * returns the same delayed B3 quotes (~15 min).
  */
 export class B3QuoteRepository extends QuoteRepository {
-  static BASE_URL = 'https://cotacao.b3.com.br/mds/api/v1/InstrumentQuotation';
+  static BASE_URL = 'https://scanner.tradingview.com/brazil/scan';
   static TICKER_PATTERN = /^[A-Z][A-Z0-9]{3,5}\d{1,2}$/;
+  static COLUMNS = [
+    'name',
+    'close',
+    'change',
+    'open',
+    'high',
+    'low',
+    'volume',
+    'description',
+    'update_mode',
+  ];
 
   /** @private cache keyed by ticker: { at: number, quote: Quote } */
   _cache = new Map();
@@ -31,40 +45,40 @@ export class B3QuoteRepository extends QuoteRepository {
       return cached.quote;
     }
 
-    const url = `${B3QuoteRepository.BASE_URL}/${encodeURIComponent(symbol)}`;
-    const resp = await fetch(url, { headers: { Accept: 'application/json' } });
+    const body = JSON.stringify({
+      symbols: { tickers: [`BMFBOVESPA:${symbol}`], query: { types: [] } },
+      columns: B3QuoteRepository.COLUMNS,
+    });
+
+    // text/plain keeps this a CORS "simple request" (no preflight).
+    const resp = await fetch(B3QuoteRepository.BASE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body,
+    });
 
     if (!resp.ok) {
-      throw new Error(`B3 API erro ${resp.status}`);
+      throw new Error(`Falha ao buscar cotação (${resp.status})`);
     }
 
     const json = await resp.json();
-    const status = json?.BizSts?.cd;
-
-    if (status && status !== 'OK') {
-      throw new Error(`B3 retornou status ${status}`);
-    }
-
-    const trades = json?.Trad;
-    if (!Array.isArray(trades) || trades.length === 0) {
+    const row = json?.data?.[0]?.d;
+    if (!Array.isArray(row) || row.length === 0) {
       throw new Error(`Sem cotação disponível para ${symbol}`);
     }
 
-    const trade = trades.find(t => t?.scty?.mkt?.nm === 'Vista') || trades[0];
-    const quoteData = trade?.scty?.SctyQtn || {};
-
     const quote = new Quote({
-      ticker: trade?.scty?.symb || symbol,
-      name: (trade?.scty?.desc || '').replace(/\s+/g, ' ').trim() || symbol,
-      price: this._num(quoteData.curPrc),
-      changePercent: this._num(quoteData.prcFlcn),
-      open: this._num(quoteData.opngPric),
-      high: this._num(quoteData.maxPric),
-      low: this._num(quoteData.minPric),
-      average: this._num(quoteData.avrgPric),
-      volume: this._num(trade?.ttlQty),
-      updatedAt: json?.Msg?.dtTm || null,
-      source: 'B3',
+      ticker: row[0] || symbol,
+      name: row[7] || symbol,
+      price: this._num(row[1]),
+      changePercent: this._num(row[2]),
+      open: this._num(row[3]),
+      high: this._num(row[4]),
+      low: this._num(row[5]),
+      volume: this._num(row[6]),
+      average: null,
+      updatedAt: null,
+      source: 'TradingView · B3 (atraso ~15 min)',
     });
 
     this._cache.set(symbol, { at: Date.now(), quote });

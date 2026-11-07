@@ -22,23 +22,32 @@ export class DataChart {
 
     const historical = this._parseCsv(csv?.historical || '');
     const additional = this._parseCsv(csv?.additional || '');
-    const primary = historical || additional;
+    this._sources = { historical, additional };
 
     this._dispose();
 
-    if (!primary) {
+    if (!historical && !additional) {
       this._container.innerHTML = `
         <div class="empty-section">Sem dados históricos (CSV) para montar o gráfico deste ativo.</div>`;
       return;
     }
 
-    this._data = primary;
-    this._selected = this._pickDefaultMetrics(primary.metrics);
+    this._source = historical ? 'historical' : 'additional';
+    this._data = this._sources[this._source];
+    this._selected = this._pickDefaultMetrics(this._data.metrics);
+
+    const sourceToggle = historical && additional
+      ? `<div class="chart-action-group" id="chart-source">
+           <button data-source="historical" class="active">Histórico</button>
+           <button data-source="additional">Adicionais</button>
+         </div>`
+      : '';
 
     this._container.innerHTML = `
       <div class="chart-controls">
         <div class="chart-metrics" id="chart-metrics"></div>
         <div class="chart-actions">
+          ${sourceToggle}
           <div class="chart-action-group" id="chart-range">
             <button data-range="1">1A</button>
             <button data-range="3">3A</button>
@@ -94,14 +103,8 @@ export class DataChart {
 
   /** @private */
   _attachControls() {
-    this._container.querySelectorAll('#chart-metrics .metric-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const label = chip.dataset.label;
-        if (this._selected.has(label)) this._selected.delete(label);
-        else this._selected.add(label);
-        chip.classList.toggle('active', this._selected.has(label));
-        this._updateChart();
-      });
+    this._container.querySelectorAll('#chart-source button').forEach(btn => {
+      btn.addEventListener('click', () => this._switchSource(btn.dataset.source));
     });
 
     this._container.querySelectorAll('#chart-range button').forEach(btn => {
@@ -126,6 +129,22 @@ export class DataChart {
   }
 
   /** @private */
+  _switchSource(source) {
+    if (!this._sources?.[source]) return;
+
+    this._source = source;
+    this._data = this._sources[source];
+    this._selected = this._pickDefaultMetrics(this._data.metrics);
+
+    this._container.querySelectorAll('#chart-source button').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.source === source);
+    });
+
+    this._renderMetricChips();
+    this._updateChart();
+  }
+
+  /** @private */
   _renderMetricChips() {
     const host = this._container.querySelector('#chart-metrics');
     host.innerHTML = this._data.metrics.map(metric => `
@@ -133,6 +152,16 @@ export class DataChart {
         ${this._esc(metric.label)}
       </button>
     `).join('');
+
+    host.querySelectorAll('.metric-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const label = chip.dataset.label;
+        if (this._selected.has(label)) this._selected.delete(label);
+        else this._selected.add(label);
+        chip.classList.toggle('active', this._selected.has(label));
+        this._updateChart();
+      });
+    });
   }
 
   /** @private */
