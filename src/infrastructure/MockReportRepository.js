@@ -15,21 +15,43 @@ export class MockReportRepository extends ReportRepository {
   async listReports() {
     // Simulate network delay
     await this._delay(400);
-    return this._reports.map(r => new Report({
-      id: r.id,
-      title: r.title,
-      path: r.id,
-      size: r.content.length,
-      updatedAt: r.updatedAt,
-      content: null,
-    }));
+    return this._reports.map(r => this._toSummary(r));
   }
 
   async getReportById(id) {
     await this._delay(600);
     const report = this._reports.find(r => r.id === id);
     if (!report) throw new Error(`Relatório não encontrado: ${id}`);
-    return new Report({ ...report });
+
+    const summary = this._toSummary(report);
+    return new Report({
+      ...summary,
+      content: {
+        summary: report.content,
+        history: report.content,
+        data: report.content,
+      },
+      csv: { historical: '', additional: '' },
+    });
+  }
+
+  /** @private */
+  _toSummary(report) {
+    const ticker = (report.title.match(/\(([^)]+)\)/) || [])[1]
+      || report.id.split('/').pop().replace(/\.md$/i, '');
+
+    return new Report({
+      id: report.id,
+      title: ticker,
+      ticker,
+      name: report.title.replace(/\s*\([^)]*\)\s*$/, ''),
+      category: /11$/.test(ticker) ? 'fiis' : 'acoes',
+      path: report.id,
+      files: {},
+      size: report.content.length,
+      updatedAt: report.updatedAt,
+      content: null,
+    });
   }
 
   async testConnection() {

@@ -33,6 +33,7 @@ import { MarkdownViewer }  from './components/MarkdownViewer.js';
 import { ChatDrawer }      from './components/ChatDrawer.js';
 import { SettingsModal }   from './components/SettingsModal.js';
 import { QuotePanel }       from './components/QuotePanel.js';
+import { DataChart }        from './components/DataChart.js';
 
 // ── App State ─────────────────────────────────────────────────────────────────
 const state = {
@@ -48,6 +49,14 @@ const manageSettingsUC   = new ManageSettingsUseCase(settingsStorage);
 const sidebar        = new Sidebar();
 const markdownViewer = new MarkdownViewer();
 const quotePanel     = new QuotePanel();
+const dataChart      = new DataChart();
+
+// The chart needs a resize once its tab becomes visible.
+markdownViewer.onTabChange((tabId) => {
+  if (tabId === 'data') {
+    window.requestAnimationFrame(() => dataChart.resize());
+  }
+});
 
 // ── Quote (B3 public API — no token required) ─────────────────────────────────
 const getQuoteUC = new GetQuoteUseCase(new B3QuoteRepository());
@@ -108,6 +117,9 @@ async function initRepository(settings) {
     const aiService  = new OpenRouterService(settings.openrouterKey, settings.openrouterModel || 'deepseek/deepseek-chat');
     askAIUseCase     = new AskAIUseCase(aiService);
     chatDrawer       = new ChatDrawer(askAIUseCase);
+  } else {
+    askAIUseCase = null;
+    chatDrawer = null;
   }
 
   // Enable/disable AI button
@@ -136,30 +148,63 @@ async function loadReportsList(reportRepository) {
 
 async function loadReport(reportSummary, reportRepository) {
   markdownViewer.showLoading();
+  dataChart.clear();
+  quotePanel.clear();
   state.currentReport = null;
-
-  // Quote is independent from the report content — load it in parallel.
-  const ticker = extractTicker(reportSummary);
-  if (ticker) {
-    quotePanel.load(ticker, (symbol, options) => getQuoteUC.execute(symbol, options));
-  } else {
-    quotePanel.clear();
-  }
 
   try {
     const detailsUC = new GetReportDetailsUseCase(reportRepository);
     const report    = await detailsUC.execute(reportSummary.id);
     state.currentReport = report;
 
-    markdownViewer.render(report.content);
+    // Header
+    renderAssetHeader(report);
+
+    // Update the sidebar label with the full asset name
+    if (report.name) sidebar.updateAssetName(report.id, report.name);
+
+    // Tabs (summary / history / data markdown)
+    markdownViewer.render(report);
+
+    // Data tab chart + tables
+    dataChart.render(report.csv);
+
+    // Quote is independent from the report content — load it in parallel.
+    const ticker = await resolveQuoteTicker(report);
+    if (ticker) {
+      quotePanel.load(ticker, (symbol, options) => getQuoteUC.execute(symbol, options));
+    } else {
+      quotePanel.clear();
+    }
 
     // Enable AI button if AI is configured
     document.getElementById('btn-ai').disabled = !askAIUseCase;
 
   } catch (err) {
-    console.error('[app] Erro ao carregar relatório:', err);
-    markdownViewer.showError(err.message || 'Não foi possível carregar o relatório.');
+    console.error('[app] Erro ao carregar ativo:', err);
+    markdownViewer.showError(err.message || 'Não foi possível carregar o ativo.');
   }
+}
+
+function renderAssetHeader(report) {
+  const header = document.getElementById('asset-header');
+  if (!header) return;
+
+  header.style.display = 'flex';
+  document.getElementById('asset-title').textContent = report.ticker || report.title;
+  document.getElementById('asset-name').textContent = report.name || '';
+
+  const badge = document.getElementById('asset-category');
+  if (badge) {
+    const labels = { acoes: 'Ação', fiis: 'FII', outros: 'Ativo' };
+    badge.textContent = labels[report.category] || 'Ativo';
+    badge.style.display = '';
+  }
+}
+
+function hideAssetHeader() {
+  const header = document.getElementById('asset-header');
+  if (header) header.style.display = 'none';
 }
 
 // ── Settings Handling ─────────────────────────────────────────────────────────
@@ -167,8 +212,12 @@ async function handleSettingsSaved(newSettings) {
   if (!newSettings) {
     // Settings cleared — reset to initial state
     markdownViewer.reset();
+    dataChart.clear();
     quotePanel.clear();
+    hideAssetHeader();
     sidebar.showError('Configure suas credenciais para começar.');
+    askAIUseCase = null;
+    chatDrawer = null;
     document.getElementById('btn-ai').disabled = true;
     return;
   }
@@ -211,8 +260,15 @@ function wireNavbarButtons() {
       alert('Selecione um relatório antes de abrir o chat IA.');
       return;
     }
-    chatDrawer.open(state.currentReport.content);
+    chatDrawer.open(buildReportContext(state.currentReport));
   });
+}
+
+function buildReportContext(report) {
+  const content = report?.content || {};
+  return [content.summary, content.history, content.data]
+    .filter(part => part && part.trim())
+    .join('\n\n---\n\n');
 }
 
 function wireSidebarOverlay() {
@@ -233,13 +289,39 @@ function wireSidebarOverlay() {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 /**
- * Derives the B3 ticker from a report title (e.g. "WEG S.A. (WEGE3)")
- * or from the report file name (e.g. "relatorios/WEGE3.md").
+ * Resolves a valid B3 ticker for the quote panel. Some summary headings only
+ * contain the base code (e.g. "ABEV"), so try the common suffixes.
+ * @param {import('../domain/entities/Report.js').Report} report
+ * @returns {Promise<string|null>}
+ */
+async function resolveQuoteTicker(report) {
+  const base = extractTicker(report);
+  if (!base) return null;
+
+  if (/^[A-Z][A-Z0-9]{3,5}\d{1,2}$/.test(base)) return base;
+
+  for (const candidate of [`${base}3`, `${base}4`, `${base}11`]) {
+    try {
+      await getQuoteUC.execute(candidate);
+      return candidate;
+    } catch {
+      // try the next suffix
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Derives the B3 ticker from the loaded asset. The repository already parses
+ * it from the summary heading (e.g. "WEGE3"), so fall back to the title/path.
  * @param {import('../domain/entities/Report.js').Report} report
  * @returns {string|null}
  */
 function extractTicker(report) {
   if (!report) return null;
+
+  if (report.ticker) return String(report.ticker).toUpperCase();
 
   const fromTitle = /\(([A-Z][A-Z0-9]{3,5}\d{1,2})\)/i.exec(report.title || '');
   if (fromTitle) return fromTitle[1].toUpperCase();

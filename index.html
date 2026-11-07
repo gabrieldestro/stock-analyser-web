@@ -54,11 +54,16 @@
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
+      <div class="sidebar-categories" id="sidebar-categories">
+        <button class="category-btn active" data-category="all">Todos</button>
+        <button class="category-btn" data-category="acoes">Ações</button>
+        <button class="category-btn" data-category="fiis">FIIs</button>
+      </div>
       <div class="sidebar-search-wrapper">
         <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <input type="text" id="search-input" class="search-input" placeholder="Buscar relatórios..." aria-label="Buscar relatórios" />
+        <input type="text" id="search-input" class="search-input" placeholder="Buscar ativo..." aria-label="Buscar ativo" />
       </div>
     </div>
     <div class="sidebar-reports" id="sidebar-reports">
@@ -78,11 +83,20 @@
         </svg>
       </div>
       <h2>Bem-vindo ao Stock Exchange Analyser</h2>
-      <p class="text-muted">Selecione um relatório na barra lateral para começar a análise.</p>
+      <p class="text-muted">Selecione um ativo na barra lateral para começar a análise.</p>
       <p class="text-muted">Use o botão <strong>⚙️</strong> para configurar suas credenciais.</p>
     </div>
 
     <div class="report-view" id="report-view" style="display:none;">
+      <!-- Asset Header -->
+      <div class="asset-header" id="asset-header" style="display:none;">
+        <div class="asset-title-row">
+          <h1 class="asset-title" id="asset-title"></h1>
+          <span class="badge badge-blue" id="asset-category"></span>
+        </div>
+        <p class="asset-name" id="asset-name"></p>
+      </div>
+
       <!-- Tabs -->
       <div class="tabs-bar" id="tabs-bar">
         <button class="tab-btn active" data-tab="summary">
