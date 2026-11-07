@@ -30,11 +30,33 @@ export class GitHubReportRepository extends ReportRepository {
   }
 
   /**
-   * Lists all .md files in the base path.
+   * Lists all .md files in the base path, including nested subfolders.
    * @returns {Promise<Report[]>}
    */
   async listReports() {
-    const url = `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${this.basePath}`;
+    const files = await this._listMarkdownFiles(this.basePath);
+
+    return files
+      .sort((a, b) => a.path.localeCompare(b.path))
+      .map(item => new Report({
+        id: item.path,
+        title: this._formatTitle(item.name),
+        path: item.path,
+        size: item.size,
+        updatedAt: null, // Contents API doesn't return dates; we'd need commits API
+        content: null,
+      }));
+  }
+
+  /**
+   * Recursively walks a directory and collects .md file entries.
+   * @param {string} path
+   * @returns {Promise<object[]>}
+   * @private
+   */
+  async _listMarkdownFiles(path) {
+    const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+    const url = `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${encodedPath}`;
     const resp = await fetch(url, { headers: this._headers() });
 
     if (!resp.ok) {
@@ -47,16 +69,19 @@ export class GitHubReportRepository extends ReportRepository {
       throw new Error('Resposta inesperada da API do GitHub — esperava um array.');
     }
 
-    return items
-      .filter(item => item.type === 'file' && item.name.endsWith('.md'))
-      .map(item => new Report({
-        id: item.path,
-        title: this._formatTitle(item.name),
-        path: item.path,
-        size: item.size,
-        updatedAt: null, // Contents API doesn't return dates; we'd need commits API
-        content: null,
-      }));
+    const nested = await Promise.all(
+      items.map(async (item) => {
+        if (item.type === 'file' && item.name.toLowerCase().endsWith('.md')) {
+          return [item];
+        }
+        if (item.type === 'dir') {
+          return this._listMarkdownFiles(item.path);
+        }
+        return [];
+      }),
+    );
+
+    return nested.flat();
   }
 
   /**
@@ -65,7 +90,8 @@ export class GitHubReportRepository extends ReportRepository {
    * @returns {Promise<Report>}
    */
   async getReportById(path) {
-    const url = `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${path}`;
+    const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+    const url = `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${encodedPath}`;
     const resp = await fetch(url, {
       headers: {
         ...this._headers(),
