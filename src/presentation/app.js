@@ -18,18 +18,21 @@ import { LocalStorageSettings }    from '../infrastructure/LocalStorageSettings.
 import { GitHubReportRepository }  from '../infrastructure/GitHubReportRepository.js';
 import { MockReportRepository }    from '../infrastructure/MockReportRepository.js';
 import { OpenRouterService }        from '../infrastructure/OpenRouterService.js';
+import { B3QuoteRepository }        from '../infrastructure/B3QuoteRepository.js';
 
 // ── Application ──────────────────────────────────────────────────────────────
 import { ListReportsUseCase }       from '../application/ListReportsUseCase.js';
 import { GetReportDetailsUseCase }  from '../application/GetReportDetailsUseCase.js';
 import { AskAIUseCase }             from '../application/AskAIUseCase.js';
 import { ManageSettingsUseCase }    from '../application/ManageSettingsUseCase.js';
+import { GetQuoteUseCase }           from '../application/GetQuoteUseCase.js';
 
 // ── Presentation ─────────────────────────────────────────────────────────────
 import { Sidebar }         from './components/Sidebar.js';
 import { MarkdownViewer }  from './components/MarkdownViewer.js';
 import { ChatDrawer }      from './components/ChatDrawer.js';
 import { SettingsModal }   from './components/SettingsModal.js';
+import { QuotePanel }       from './components/QuotePanel.js';
 
 // ── App State ─────────────────────────────────────────────────────────────────
 const state = {
@@ -44,6 +47,10 @@ const manageSettingsUC   = new ManageSettingsUseCase(settingsStorage);
 // ── Presentation instances ────────────────────────────────────────────────────
 const sidebar        = new Sidebar();
 const markdownViewer = new MarkdownViewer();
+const quotePanel     = new QuotePanel();
+
+// ── Quote (B3 public API — no token required) ─────────────────────────────────
+const getQuoteUC = new GetQuoteUseCase(new B3QuoteRepository());
 
 // Chat / AI (lazy-initialised after settings are known)
 let askAIUseCase = null;
@@ -131,6 +138,14 @@ async function loadReport(reportSummary, reportRepository) {
   markdownViewer.showLoading();
   state.currentReport = null;
 
+  // Quote is independent from the report content — load it in parallel.
+  const ticker = extractTicker(reportSummary);
+  if (ticker) {
+    quotePanel.load(ticker, (symbol, options) => getQuoteUC.execute(symbol, options));
+  } else {
+    quotePanel.clear();
+  }
+
   try {
     const detailsUC = new GetReportDetailsUseCase(reportRepository);
     const report    = await detailsUC.execute(reportSummary.id);
@@ -152,6 +167,7 @@ async function handleSettingsSaved(newSettings) {
   if (!newSettings) {
     // Settings cleared — reset to initial state
     markdownViewer.reset();
+    quotePanel.clear();
     sidebar.showError('Configure suas credenciais para começar.');
     document.getElementById('btn-ai').disabled = true;
     return;
@@ -213,6 +229,28 @@ function wireSidebarOverlay() {
       document.getElementById('sidebar-overlay').classList.remove('visible');
     }
   });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+/**
+ * Derives the B3 ticker from a report title (e.g. "WEG S.A. (WEGE3)")
+ * or from the report file name (e.g. "relatorios/WEGE3.md").
+ * @param {import('../domain/entities/Report.js').Report} report
+ * @returns {string|null}
+ */
+function extractTicker(report) {
+  if (!report) return null;
+
+  const fromTitle = /\(([A-Z][A-Z0-9]{3,5}\d{1,2})\)/i.exec(report.title || '');
+  if (fromTitle) return fromTitle[1].toUpperCase();
+
+  const base = String(report.path || report.id || '')
+    .split('/')
+    .pop()
+    .replace(/\.md$/i, '');
+
+  const fromFile = /^([A-Z][A-Z0-9]{3,5}\d{1,2})$/i.exec(base);
+  return fromFile ? fromFile[1].toUpperCase() : null;
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────

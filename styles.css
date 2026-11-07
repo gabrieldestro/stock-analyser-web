@@ -457,6 +457,157 @@ html, body {
   border-bottom: 1px solid var(--border);
 }
 
+/* ---- Quote Panel (Dados & Gráficos) ---- */
+.quote-panel {
+  padding: 20px 20px 0;
+  background: var(--surface);
+}
+
+.quote-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quote-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quote-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quote-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.quote-ticker {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 12px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.quote-refresh {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+.quote-refresh:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.quote-main {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.quote-price {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.quote-change {
+  font-size: 15px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.quote-change.positive { color: var(--success); background: rgba(63, 185, 80, 0.12); }
+.quote-change.negative { color: var(--danger);  background: rgba(248, 81, 73, 0.12); }
+.quote-change.neutral  { color: var(--text-muted); background: rgba(139, 148, 158, 0.12); }
+
+.quote-name {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: -4px;
+}
+
+.quote-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.quote-stat {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.quote-stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.quote-stat-value {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.quote-foot {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.quote-loading,
+.quote-error {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.quote-error {
+  flex-wrap: wrap;
+}
+
+.quote-error-detail {
+  width: 100%;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+@media (max-width: 768px) {
+  .quote-panel { padding: 16px 16px 0; }
+  .quote-price { font-size: 28px; }
+}
+
 /* ---- Spinner ---- */
 .spinner {
   width: 32px;
